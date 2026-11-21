@@ -2,7 +2,7 @@ name: Build OunceIdent
 
 on:
   push:
-    branches: [master]
+    branches: [master, debug-build]
   pull_request:
   workflow_dispatch:
 
