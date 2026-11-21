@@ -9,7 +9,7 @@ extern bool g_hp_ok;
 
 static FILE *g_log = nullptr;
 
-static void Log(const char *fmt, ...) {
+void OunceLog(const char *fmt, ...) {
     if (!g_log) {
         return;
     }
@@ -20,6 +20,8 @@ static void Log(const char *fmt, ...) {
     std::fputc('\n', g_log);
     std::fflush(g_log);
 }
+
+#define Log OunceLog
 
 #define STEP(name, expr) \
     do { \
@@ -77,10 +79,8 @@ int main(int argc, char **argv) {
     Log("main reached, hos version %u.%u.%u", HOSVER_MAJOR(hosversionGet()), HOSVER_MINOR(hosversionGet()), HOSVER_MICRO(hosversionGet()));
     Services::Init();
     Log("start Menus::Main");
-    std::fflush(g_log);
-    std::fclose(g_log);
-    g_log = nullptr;
     Menus::Main();
+    Log("Menus::Main returned");
     Services::Exit();
     return 0;
 }

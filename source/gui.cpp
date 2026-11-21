@@ -5,37 +5,22 @@
 
 #include "gui.hpp"
 
+void OunceLog(const char *fmt, ...);
+
 SDL_Texture *banner = nullptr, *drive = nullptr, *menu_icons[7] = { 0 };
 
 namespace GUI {
     static SDL_Window *g_window = nullptr;
     static SDL_Renderer *g_renderer = nullptr;
     static TTF_Font *g_font = nullptr;
-    static int g_dbg_lines = 0;
     static int g_dbg_text_calls = 0;
-
-    static void DbgLog(const char *fmt, ...) {
-        if (g_dbg_lines >= 40) {
-            return;
-        }
-        g_dbg_lines++;
-        FILE *f = std::fopen("sdmc:/OunceIdent.log", "a");
-        if (!f) {
-            return;
-        }
-        va_list args;
-        va_start(args, fmt);
-        std::vfprintf(f, fmt, args);
-        va_end(args);
-        std::fputc('\n', f);
-        std::fclose(f);
-    }
+    static int g_dbg_fail_calls = 0;
 
     static void LoadImage(SDL_Texture **texture, const char *path) {
         SDL_Surface *image = IMG_Load(path);
 
         if (!image) {
-            SDL_Log("IMG_Load failed: %s\n", IMG_GetError());
+            OunceLog("IMG_Load(%s) failed: %s", path, IMG_GetError());
             return;
         }
 
@@ -43,27 +28,37 @@ namespace GUI {
         SDL_FreeSurface(image);
     }
 
+    static void TestRender(const char *label, SDL_Surface *s) {
+        if (s) {
+            OunceLog("%s: ok %dx%d format=0x%x", label, s->w, s->h, (unsigned) s->format->format);
+            SDL_FreeSurface(s);
+        }
+        else {
+            OunceLog("%s: NULL, TTF_GetError=\"%s\" SDL_GetError=\"%s\"", label, TTF_GetError(), SDL_GetError());
+        }
+    }
+
     int Init(void) {
         if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-            SDL_Log("SDL_Init failed: %s\n", SDL_GetError());
+            OunceLog("SDL_Init failed: %s", SDL_GetError());
             return -1;
         }
 
         g_window = SDL_CreateWindow("OunceIdent", 0, 0, 1920, 1080, SDL_WINDOW_FULLSCREEN);
         if (g_window == nullptr) {
-            SDL_Log("SDL_CreateWindow failed: %s\n", SDL_GetError());
+            OunceLog("SDL_CreateWindow failed: %s", SDL_GetError());
             return -2;
         }
 
         g_renderer = SDL_CreateRenderer(g_window, -1, SDL_RENDERER_SOFTWARE);
         if (g_renderer == nullptr) {
-            SDL_Log("SDL_CreateRenderer failed: %s\n", SDL_GetError());
+            OunceLog("SDL_CreateRenderer failed: %s", SDL_GetError());
             return -3;
         }
 
         int flags = IMG_INIT_PNG;
         if ((IMG_Init(flags) & flags) != flags) {
-            SDL_Log("IMG_Init failed: %s\n", IMG_GetError());
+            OunceLog("IMG_Init failed: %s", IMG_GetError());
             return -4;
         }
 
@@ -77,19 +72,34 @@ namespace GUI {
         GUI::LoadImage(&menu_icons[5], "romfs:/misc.png");
         GUI::LoadImage(&menu_icons[6], "romfs:/exit.png");
 
+        SDL_version sdl_v;
+        SDL_GetVersion(&sdl_v);
+        const SDL_version *ttf_v = TTF_Linked_Version();
+        OunceLog("SDL %d.%d.%d, SDL_ttf %d.%d.%d, renderer driver count=%d", sdl_v.major, sdl_v.minor, sdl_v.patch, ttf_v->major, ttf_v->minor, ttf_v->patch, SDL_GetNumRenderDrivers());
+
+        SDL_RendererInfo info;
+        if (SDL_GetRendererInfo(g_renderer, &info) == 0) {
+            OunceLog("renderer: %s flags=0x%x", info.name, info.flags);
+        }
+
         if (TTF_Init() != 0) {
-            SDL_Log("TTF_Init failed: %s\n", TTF_GetError());
+            OunceLog("TTF_Init failed: %s", TTF_GetError());
             return -5;
         }
         g_font = TTF_OpenFont("romfs:/Ubuntu-Regular.ttf", 36);
         if (g_font == nullptr) {
-            SDL_Log("TTF_OpenFont failed: %s\n", TTF_GetError());
+            OunceLog("TTF_OpenFont failed: %s", TTF_GetError());
             return -6;
         }
 
         int tw = 0, th = 0;
-        TTF_SizeText(g_font, "Kernel", &tw, &th);
-        DbgLog("font ok, TTF_SizeText(\"Kernel\") = %d x %d, height=%d, glyph 'K' provided=%d", tw, th, TTF_FontHeight(g_font), TTF_GlyphIsProvided(g_font, 'K'));
+        int size_ret = TTF_SizeText(g_font, "Kernel", &tw, &th);
+        OunceLog("TTF_SizeText(Kernel) ret=%d size=%dx%d fontHeight=%d glyphK=%d err=\"%s\"", size_ret, tw, th, TTF_FontHeight(g_font), TTF_GlyphIsProvided(g_font, 'K'), TTF_GetError());
+
+        SDL_Color white = { 255, 255, 255, 255 };
+        TestRender("init Blended", TTF_RenderUTF8_Blended(g_font, "Kernel", white));
+        TestRender("init Solid", TTF_RenderUTF8_Solid(g_font, "Kernel", white));
+        TestRender("init Shaded", TTF_RenderUTF8_Shaded(g_font, "Kernel", white, white));
         return 0;
     }
 
@@ -124,20 +134,20 @@ namespace GUI {
     static void DrawSurface(SDL_Surface *surface, int x, int y) {
         SDL_Texture *texture = SDL_CreateTextureFromSurface(g_renderer, surface);
         if (!texture) {
-            DbgLog("SDL_CreateTextureFromSurface failed: %s", SDL_GetError());
+            if (g_dbg_fail_calls++ < 10) OunceLog("SDL_CreateTextureFromSurface failed: %s", SDL_GetError());
             return;
         }
         SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
         SDL_Rect position = {x, y, surface->w, surface->h};
         if (SDL_RenderCopy(g_renderer, texture, nullptr, &position) != 0) {
-            DbgLog("SDL_RenderCopy failed: %s", SDL_GetError());
+            if (g_dbg_fail_calls++ < 10) OunceLog("SDL_RenderCopy failed: %s", SDL_GetError());
         }
         SDL_DestroyTexture(texture);
     }
 
     void DrawText(int x, int y, int size, SDL_Color colour, const char *text) {
         if (!g_renderer || !g_font) {
-            DbgLog("DrawText: renderer or font is null");
+            if (g_dbg_fail_calls++ < 10) OunceLog("DrawText: renderer or font is null");
             return;
         }
 
@@ -145,14 +155,14 @@ namespace GUI {
 
         SDL_Surface *raw = TTF_RenderUTF8_Blended(g_font, text, colour);
         if (!raw) {
-            DbgLog("DrawText: TTF_RenderUTF8_Blended returned null: %s", TTF_GetError());
+            if (g_dbg_fail_calls++ < 10) OunceLog("DrawText(\"%s\"): Blended returned NULL: %s", text, TTF_GetError());
             return;
         }
 
         SDL_Surface *surface = SDL_ConvertSurfaceFormat(raw, SDL_PIXELFORMAT_RGBA32, 0);
         SDL_FreeSurface(raw);
         if (!surface) {
-            DbgLog("DrawText: SDL_ConvertSurfaceFormat returned null: %s", SDL_GetError());
+            if (g_dbg_fail_calls++ < 10) OunceLog("DrawText(\"%s\"): convert returned NULL: %s", text, SDL_GetError());
             return;
         }
 
@@ -168,7 +178,7 @@ namespace GUI {
                     if (a > max_alpha) max_alpha = a;
                 }
             }
-            DbgLog("DrawText \"%s\" at %d,%d surface %dx%d nonzero_alpha_pixels=%d max_alpha=%d colour=%d,%d,%d", text, x, y, surface->w, surface->h, nonzero, max_alpha, colour.r, colour.g, colour.b);
+            OunceLog("DrawText \"%s\" at %d,%d surface %dx%d nonzero_alpha_pixels=%d max_alpha=%d colour=%d,%d,%d", text, x, y, surface->w, surface->h, nonzero, max_alpha, colour.r, colour.g, colour.b);
         }
 
         DrawSurface(surface, x, y);
@@ -208,6 +218,10 @@ namespace GUI {
 
     void Render(void) {
         if (!g_renderer) return;
+
+        SDL_SetRenderDrawColor(g_renderer, 255, 0, 255, 255);
+        SDL_Rect marker = {1700, 1000, 100, 40};
+        SDL_RenderFillRect(g_renderer, &marker);
 
         if (g_font) {
             SDL_Color white = { 255, 255, 255, 255 };
