@@ -73,10 +73,13 @@ namespace Services {
 
 int main(int argc, char **argv) {
     g_log = std::fopen("sdmc:/OunceIdent.log", "w");
+    Log("OunceIdent diagnostic build compiled %s %s", __DATE__, __TIME__);
     Log("main reached, hos version %u.%u.%u", HOSVER_MAJOR(hosversionGet()), HOSVER_MINOR(hosversionGet()), HOSVER_MICRO(hosversionGet()));
     Services::Init();
     Log("start Menus::Main");
     std::fflush(g_log);
+    std::fclose(g_log);
+    g_log = nullptr;
     Menus::Main();
     Services::Exit();
     return 0;

@@ -11,18 +11,24 @@ namespace GUI {
     static SDL_Window *g_window = nullptr;
     static SDL_Renderer *g_renderer = nullptr;
     static TTF_Font *g_font = nullptr;
-    static int g_text_logs = 0;
+    static int g_dbg_lines = 0;
+    static int g_dbg_text_calls = 0;
 
-    static void TextLog(const char *what, const char *err) {
-        if (g_text_logs >= 8) {
+    static void DbgLog(const char *fmt, ...) {
+        if (g_dbg_lines >= 40) {
             return;
         }
-        g_text_logs++;
+        g_dbg_lines++;
         FILE *f = std::fopen("sdmc:/OunceIdent.log", "a");
-        if (f) {
-            std::fprintf(f, "DrawText: %s: %s\n", what, err ? err : "(null)");
-            std::fclose(f);
+        if (!f) {
+            return;
         }
+        va_list args;
+        va_start(args, fmt);
+        std::vfprintf(f, fmt, args);
+        va_end(args);
+        std::fputc('\n', f);
+        std::fclose(f);
     }
 
     static void LoadImage(SDL_Texture **texture, const char *path) {
@@ -80,6 +86,10 @@ namespace GUI {
             SDL_Log("TTF_OpenFont failed: %s\n", TTF_GetError());
             return -6;
         }
+
+        int tw = 0, th = 0;
+        TTF_SizeText(g_font, "Kernel", &tw, &th);
+        DbgLog("font ok, TTF_SizeText(\"Kernel\") = %d x %d, height=%d, glyph 'K' provided=%d", tw, th, TTF_FontHeight(g_font), TTF_GlyphIsProvided(g_font, 'K'));
         return 0;
     }
 
@@ -111,9 +121,23 @@ namespace GUI {
         SDL_RenderFillRect(g_renderer, &rect);
     }
 
+    static void DrawSurface(SDL_Surface *surface, int x, int y) {
+        SDL_Texture *texture = SDL_CreateTextureFromSurface(g_renderer, surface);
+        if (!texture) {
+            DbgLog("SDL_CreateTextureFromSurface failed: %s", SDL_GetError());
+            return;
+        }
+        SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+        SDL_Rect position = {x, y, surface->w, surface->h};
+        if (SDL_RenderCopy(g_renderer, texture, nullptr, &position) != 0) {
+            DbgLog("SDL_RenderCopy failed: %s", SDL_GetError());
+        }
+        SDL_DestroyTexture(texture);
+    }
+
     void DrawText(int x, int y, int size, SDL_Color colour, const char *text) {
         if (!g_renderer || !g_font) {
-            TextLog("renderer or font is null", nullptr);
+            DbgLog("DrawText: renderer or font is null");
             return;
         }
 
@@ -121,30 +145,38 @@ namespace GUI {
 
         SDL_Surface *raw = TTF_RenderUTF8_Blended(g_font, text, colour);
         if (!raw) {
-            TextLog("TTF_RenderUTF8_Blended returned null", TTF_GetError());
+            DbgLog("DrawText: TTF_RenderUTF8_Blended returned null: %s", TTF_GetError());
             return;
         }
 
         SDL_Surface *surface = SDL_ConvertSurfaceFormat(raw, SDL_PIXELFORMAT_RGBA32, 0);
         SDL_FreeSurface(raw);
         if (!surface) {
-            TextLog("SDL_ConvertSurfaceFormat returned null", SDL_GetError());
+            DbgLog("DrawText: SDL_ConvertSurfaceFormat returned null: %s", SDL_GetError());
             return;
         }
 
-        SDL_Texture *texture = SDL_CreateTextureFromSurface(g_renderer, surface);
-        if (!texture) {
-            TextLog("SDL_CreateTextureFromSurface returned null", SDL_GetError());
-            SDL_FreeSurface(surface);
-            return;
+        if (g_dbg_text_calls < 6) {
+            g_dbg_text_calls++;
+            int nonzero = 0;
+            int max_alpha = 0;
+            for (int row = 0; row < surface->h; row++) {
+                const Uint8 *p = static_cast<const Uint8 *>(surface->pixels) + row * surface->pitch;
+                for (int col = 0; col < surface->w; col++) {
+                    int a = p[col * 4 + 3];
+                    if (a > 0) nonzero++;
+                    if (a > max_alpha) max_alpha = a;
+                }
+            }
+            DbgLog("DrawText \"%s\" at %d,%d surface %dx%d nonzero_alpha_pixels=%d max_alpha=%d colour=%d,%d,%d", text, x, y, surface->w, surface->h, nonzero, max_alpha, colour.r, colour.g, colour.b);
         }
 
-        SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
-        SDL_Rect position = {x, y, surface->w, surface->h};
-        if (SDL_RenderCopy(g_renderer, texture, nullptr, &position) != 0) {
-            TextLog("SDL_RenderCopy failed", SDL_GetError());
-        }
-        SDL_DestroyTexture(texture);
+        DrawSurface(surface, x, y);
+
+        SDL_SetRenderDrawColor(g_renderer, 255, 0, 255, 255);
+        SDL_Rect box = {x, y, surface->w, surface->h};
+        SDL_RenderDrawRect(g_renderer, &box);
+
         SDL_FreeSurface(surface);
     }
 
@@ -176,6 +208,21 @@ namespace GUI {
 
     void Render(void) {
         if (!g_renderer) return;
+
+        if (g_font) {
+            SDL_Color white = { 255, 255, 255, 255 };
+            SDL_Surface *solid = TTF_RenderUTF8_Solid(g_font, "SOLID TEST", white);
+            if (solid) {
+                DrawSurface(solid, 450, 1000);
+                SDL_FreeSurface(solid);
+            }
+            SDL_Surface *blended = TTF_RenderUTF8_Blended(g_font, "BLENDED TEST", white);
+            if (blended) {
+                DrawSurface(blended, 450, 1040);
+                SDL_FreeSurface(blended);
+            }
+        }
+
         SDL_RenderPresent(g_renderer);
     }
 }
