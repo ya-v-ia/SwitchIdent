@@ -3,6 +3,7 @@
 #include "common.hpp"
 
 GpioPadSession hp_inserted;
+bool g_hp_ok = false;
 
 namespace SwitchIdent {
     u64 GetLanguage(void) {
@@ -70,7 +71,7 @@ namespace SwitchIdent {
     
     SetCalBdAddress GetBluetoothBdAddress(void) {
         Result ret = 0;
-        SetCalBdAddress bd_addr;
+        SetCalBdAddress bd_addr = {};
         
         if (R_FAILED(ret = setcalGetBdAddress(&bd_addr))) {
             std::printf("setcalGetBdAddress() failed: 0x%x.\n\n", ret);
@@ -81,7 +82,7 @@ namespace SwitchIdent {
     
     SetCalMacAddress GetWirelessLanMacAddress(void) {
         Result ret = 0;
-        SetCalMacAddress mac_addr;
+        SetCalMacAddress mac_addr = {};
         
         if (R_FAILED(ret = setcalGetWirelessLanMacAddress(&mac_addr))) {
             std::printf("setcalGetWirelessLanMacAddress() failed: 0x%x.\n\n", ret);
@@ -92,10 +93,15 @@ namespace SwitchIdent {
 
     const char *GetHeadphoneStatus(void) {
         Result ret = 0;
-        GpioValue value;
+        GpioValue value = GpioValue_High;
         
+        if (!g_hp_ok) {
+            return "Unsupported";
+        }
+
         if (R_FAILED(ret = gpioPadGetValue(&hp_inserted, &value))) {
             std::printf("gpioPadGetValue() failed: 0x%x.\n\n", ret);
+            return "Unsupported";
         }
 
         return (value == GpioValue_Low)? "Inserted": "Not inserted";

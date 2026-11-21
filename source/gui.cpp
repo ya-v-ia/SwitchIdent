@@ -11,6 +11,19 @@ namespace GUI {
     static SDL_Window *g_window = nullptr;
     static SDL_Renderer *g_renderer = nullptr;
     static TTF_Font *g_font = nullptr;
+    static int g_text_logs = 0;
+
+    static void TextLog(const char *what, const char *err) {
+        if (g_text_logs >= 8) {
+            return;
+        }
+        g_text_logs++;
+        FILE *f = std::fopen("sdmc:/OunceIdent.log", "a");
+        if (f) {
+            std::fprintf(f, "DrawText: %s: %s\n", what, err ? err : "(null)");
+            std::fclose(f);
+        }
+    }
 
     static void LoadImage(SDL_Texture **texture, const char *path) {
         SDL_Surface *image = IMG_Load(path);
@@ -99,16 +112,37 @@ namespace GUI {
     }
 
     void DrawText(int x, int y, int size, SDL_Color colour, const char *text) {
-        if (!g_renderer || !g_font) return;
-
-        SDL_Surface *surface = TTF_RenderUTF8_Blended(g_font, text, colour);
-        if (!surface) return;
-        SDL_Texture *texture = SDL_CreateTextureFromSurface(g_renderer, surface);
-        if (texture) {
-            SDL_Rect position = {x, y, surface->w, surface->h};
-            SDL_RenderCopy(g_renderer, texture, nullptr, &position);
-            SDL_DestroyTexture(texture);
+        if (!g_renderer || !g_font) {
+            TextLog("renderer or font is null", nullptr);
+            return;
         }
+
+        SDL_Surface *raw = TTF_RenderUTF8_Blended(g_font, text, colour);
+        if (!raw) {
+            TextLog("TTF_RenderUTF8_Blended returned null", TTF_GetError());
+            return;
+        }
+
+        SDL_Surface *surface = SDL_ConvertSurfaceFormat(raw, SDL_PIXELFORMAT_RGBA32, 0);
+        SDL_FreeSurface(raw);
+        if (!surface) {
+            TextLog("SDL_ConvertSurfaceFormat returned null", SDL_GetError());
+            return;
+        }
+
+        SDL_Texture *texture = SDL_CreateTextureFromSurface(g_renderer, surface);
+        if (!texture) {
+            TextLog("SDL_CreateTextureFromSurface returned null", SDL_GetError());
+            SDL_FreeSurface(surface);
+            return;
+        }
+
+        SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+        SDL_Rect position = {x, y, surface->w, surface->h};
+        if (SDL_RenderCopy(g_renderer, texture, nullptr, &position) != 0) {
+            TextLog("SDL_RenderCopy failed", SDL_GetError());
+        }
+        SDL_DestroyTexture(texture);
         SDL_FreeSurface(surface);
     }
 

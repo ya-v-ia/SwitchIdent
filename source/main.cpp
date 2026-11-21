@@ -5,6 +5,8 @@
 #include "gui.hpp"
 #include "menus.hpp"
 
+extern bool g_hp_ok;
+
 static FILE *g_log = nullptr;
 
 static void Log(const char *fmt, ...) {
@@ -57,7 +59,11 @@ namespace Services {
         STEP("hiddbgInitialize", hiddbgInitialize());
         STEP("hidsysInitialize", hidsysInitialize());
         STEP("gpioInitialize", gpioInitialize());
-        STEP("gpioOpenSession", gpioOpenSession(&hp_inserted, static_cast<GpioPadName>(21)));
+
+        Log("start gpioOpenSession");
+        Result hp_ret = gpioOpenSession(&hp_inserted, static_cast<GpioPadName>(21));
+        g_hp_ok = R_SUCCEEDED(hp_ret);
+        Log("done  gpioOpenSession -> 0x%x (headphone detect %s)", hp_ret, g_hp_ok ? "on" : "off");
 
         Log("start GUI::Init");
         int gui_ret = GUI::Init();
@@ -70,6 +76,7 @@ int main(int argc, char **argv) {
     Log("main reached, hos version %u.%u.%u", HOSVER_MAJOR(hosversionGet()), HOSVER_MINOR(hosversionGet()), HOSVER_MICRO(hosversionGet()));
     Services::Init();
     Log("start Menus::Main");
+    std::fflush(g_log);
     Menus::Main();
     Services::Exit();
     return 0;
