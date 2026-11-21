@@ -117,6 +117,8 @@ namespace GUI {
             return;
         }
 
+        colour.a = 255;
+
         SDL_Surface *raw = TTF_RenderUTF8_Blended(g_font, text, colour);
         if (!raw) {
             TextLog("TTF_RenderUTF8_Blended returned null", TTF_GetError());
@@ -156,8 +158,12 @@ namespace GUI {
     }
 
     void GetTextDimensions(int size, const char *text, int *width, int *height) {
-        if (!g_font) { *width = 0; *height = 0; return; }
-        TTF_SizeText(g_font, text, width, height);
+        int w = 0, h = 0;
+        if (g_font) {
+            TTF_SizeText(g_font, text, &w, &h);
+        }
+        if (width) *width = w;
+        if (height) *height = h;
     }
 
     void DrawImage(SDL_Texture *texture, int x, int y) {
