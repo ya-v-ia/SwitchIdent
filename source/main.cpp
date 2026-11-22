@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cstdarg>
+#include <unistd.h>
 
 #include "common.hpp"
 #include "gui.hpp"
@@ -19,6 +20,7 @@ void OunceLog(const char *fmt, ...) {
     va_end(args);
     std::fputc('\n', g_log);
     std::fflush(g_log);
+    fsync(fileno(g_log));
 }
 
 #define Log OunceLog

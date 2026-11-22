@@ -28,6 +28,40 @@ namespace GUI {
         SDL_FreeSurface(image);
     }
 
+    static void PrewarmGlyphs(void) {
+        SDL_Color white = { 255, 255, 255, 255 };
+        int failed = 0;
+        char failed_list[64] = { 0 };
+
+        for (int c = 33; c <= 126; c++) {
+            char s[2] = { static_cast<char>(c), 0 };
+            SDL_Surface *surf = TTF_RenderUTF8_Blended(g_font, s, white);
+            if (surf) {
+                SDL_FreeSurface(surf);
+            }
+            else {
+                if (failed < 60) {
+                    failed_list[failed] = static_cast<char>(c);
+                }
+                failed++;
+                if (failed <= 3) {
+                    OunceLog("prewarm: char '%c' failed: %s", c, TTF_GetError());
+                }
+            }
+        }
+
+        SDL_Surface *deg = TTF_RenderUTF8_Blended(g_font, "\xC2\xB0", white);
+        if (deg) {
+            SDL_FreeSurface(deg);
+        }
+        else {
+            failed++;
+            OunceLog("prewarm: degree sign failed: %s", TTF_GetError());
+        }
+
+        OunceLog("prewarm done: %d failed, first failures: [%s]", failed, failed_list);
+    }
+
     static void TestRender(const char *label, SDL_Surface *s) {
         if (s) {
             OunceLog("%s: ok %dx%d format=0x%x", label, s->w, s->h, (unsigned) s->format->format);
@@ -94,12 +128,14 @@ namespace GUI {
 
         int tw = 0, th = 0;
         int size_ret = TTF_SizeText(g_font, "Kernel", &tw, &th);
-        OunceLog("TTF_SizeText(Kernel) ret=%d size=%dx%d fontHeight=%d glyphK=%d err=\"%s\"", size_ret, tw, th, TTF_FontHeight(g_font), TTF_GlyphIsProvided(g_font, 'K'), TTF_GetError());
+        OunceLog("TTF_SizeText(Kernel) ret=%d size=%dx%d fontHeight=%d glyphK=%d", size_ret, tw, th, TTF_FontHeight(g_font), TTF_GlyphIsProvided(g_font, 'K'));
 
         SDL_Color white = { 255, 255, 255, 255 };
         TestRender("init Blended", TTF_RenderUTF8_Blended(g_font, "Kernel", white));
-        TestRender("init Solid", TTF_RenderUTF8_Solid(g_font, "Kernel", white));
-        TestRender("init Shaded", TTF_RenderUTF8_Shaded(g_font, "Kernel", white, white));
+
+        PrewarmGlyphs();
+
+        TestRender("post-prewarm Blended 'SwitchIdent v0.5'", TTF_RenderUTF8_Blended(g_font, "SwitchIdent v0.5", white));
         return 0;
     }
 
@@ -166,19 +202,9 @@ namespace GUI {
             return;
         }
 
-        if (g_dbg_text_calls < 6) {
+        if (g_dbg_text_calls < 8) {
             g_dbg_text_calls++;
-            int nonzero = 0;
-            int max_alpha = 0;
-            for (int row = 0; row < surface->h; row++) {
-                const Uint8 *p = static_cast<const Uint8 *>(surface->pixels) + row * surface->pitch;
-                for (int col = 0; col < surface->w; col++) {
-                    int a = p[col * 4 + 3];
-                    if (a > 0) nonzero++;
-                    if (a > max_alpha) max_alpha = a;
-                }
-            }
-            OunceLog("DrawText \"%s\" at %d,%d surface %dx%d nonzero_alpha_pixels=%d max_alpha=%d colour=%d,%d,%d", text, x, y, surface->w, surface->h, nonzero, max_alpha, colour.r, colour.g, colour.b);
+            OunceLog("DrawText \"%s\" at %d,%d surface %dx%d", text, x, y, surface->w, surface->h);
         }
 
         DrawSurface(surface, x, y);
@@ -222,20 +248,6 @@ namespace GUI {
         SDL_SetRenderDrawColor(g_renderer, 255, 0, 255, 255);
         SDL_Rect marker = {1700, 1000, 100, 40};
         SDL_RenderFillRect(g_renderer, &marker);
-
-        if (g_font) {
-            SDL_Color white = { 255, 255, 255, 255 };
-            SDL_Surface *solid = TTF_RenderUTF8_Solid(g_font, "SOLID TEST", white);
-            if (solid) {
-                DrawSurface(solid, 450, 1000);
-                SDL_FreeSurface(solid);
-            }
-            SDL_Surface *blended = TTF_RenderUTF8_Blended(g_font, "BLENDED TEST", white);
-            if (blended) {
-                DrawSurface(blended, 450, 1040);
-                SDL_FreeSurface(blended);
-            }
-        }
 
         SDL_RenderPresent(g_renderer);
     }
